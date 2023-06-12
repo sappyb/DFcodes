@@ -3353,6 +3353,48 @@ router_packet_receive( router_state * s,
 
   msg->saved_vc = output_port;
   msg->saved_channel = output_chan;
+  if (to_terminal == 0 && msg->last_hop == TERMINAL)
+  // if (s->switch_level == 0 && msg->last_hop == TERMINAL)
+  {
+    /*Leaf switch but the packet is going to other router*/
+    int64_t data_sent;
+    if (msg->packet_size % s->params->chunk_size)
+    {
+      data_sent = (msg->packet_size % s->params->chunk_size);
+    }
+    else
+    {
+      data_sent = s->params->chunk_size;
+    }
+    unordered_map<int, unordered_map<int, vector<int64_t>>>::const_iterator src_it = flow_table.find(flow_src);
+    if (src_it != flow_table.end())
+    {
+      /*Flow table has the source*/
+      unordered_map<int, vector<int64_t>>::const_iterator dest_it = flow_table[flow_src].find(flow_dest);
+      if (dest_it != flow_table[flow_src].end())
+      {
+        /*Flow table has the destination*/
+        flow_table[flow_src][flow_dest][0] += data_sent;
+      }
+      else
+      {
+        /*Flow table has the source but no destination*/
+        vector<int64_t> temp(1, 0);
+        temp[0] = data_sent;
+        flow_table[flow_src].insert(make_pair(flow_dest, temp));
+      }
+    }
+    else
+    {
+      /*Flow table has no source and no destination. So add the new flow.*/
+      vector<int64_t> temp(1, 0);
+      temp[0] = data_sent;
+      unordered_map<int, vector<int64_t>> inner;
+      inner.insert(make_pair(flow_dest, temp));
+      flow_table.insert(make_pair(flow_src, inner));
+    }
+  }
+
   return;
 }
 
