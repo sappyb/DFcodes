@@ -125,6 +125,8 @@ static char router_sample_file[MAX_NAME_LENGTH];
 //don't do overhead here - job of MPI layer
 static tw_stime mpi_soft_overhead = 0;
 
+unordered_map<int, unordered_map<int, vector<int64_t>>> flow_table;
+
 typedef struct terminal_custom_message_list terminal_custom_message_list;
 struct terminal_custom_message_list {
     terminal_custom_message msg;
@@ -2400,6 +2402,18 @@ terminal_buf_update(terminal_state * s,
   return;
 }
 
+/* Update flow Table */
+static void update_flow_table()
+{
+  for (auto it = flow_table.begin(); it != flow_table.end(); it++)
+  {
+    for (auto it_2 = it->second.begin(); it_2 != it->second.end(); it_2++)
+    {
+      flow_table[it->first][it_2->first].insert(flow_table[it->first][it_2->first].begin(), 0);
+    }
+  }
+}
+
 void 
 terminal_custom_event( terminal_state * s, 
 		tw_bf * bf, 
@@ -3353,6 +3367,14 @@ router_packet_receive( router_state * s,
 
   msg->saved_vc = output_port;
   msg->saved_channel = output_chan;
+  int to_terminal = 1;
+  if(output_port < s->params->intra_grp_radix) {
+    to_terminal = 0;
+  } else if(output_port < s->params->intra_grp_radix +
+    s->params->num_global_channels) {
+    to_terminal = 0;
+  }
+
   if (to_terminal == 0 && msg->last_hop == TERMINAL)
   // if (s->switch_level == 0 && msg->last_hop == TERMINAL)
   {
