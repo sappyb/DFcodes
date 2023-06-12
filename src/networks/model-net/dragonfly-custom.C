@@ -873,6 +873,9 @@ else
             fprintf(stderr, "global_delay not specified, using default calculation: %.2f\n", p->global_delay);
     }
 
+
+
+
   //CREDIT DELAY CONFIGURATION LOGIC ------------
     rc = configuration_get_value_int(&config, "PARAMS", "credit_size", anno, &p->credit_size);
     if (rc) {
@@ -1192,6 +1195,21 @@ void router_custom_setup(router_state * r, tw_lp * lp)
             r->queued_msgs_tail[i][j] = NULL;
         }
     }
+
+   {
+        // Block for initial polling setup
+        tw_event *e_data;
+        void *m_data;
+        tw_stime eventcall_time;
+        tw_stime interval = data_proc_interval;
+        eventcall_time = interval;
+        // printf("Current time %lf and interval %f and event callTime %f\n", tw_now(lp), interval, eventcall_time);
+        e_data = tw_event_new(lp->gid, eventcall_time, lp);
+        m_data = tw_event_data(e_data);
+        m_data->type = R_PROCESS;
+        m_data->magic = router_magic_num;
+        tw_event_send(e_data);
+   }
    return;
 }	
 
@@ -3623,6 +3641,70 @@ static void router_buf_update(router_state * s, tw_bf * bf, terminal_custom_mess
   return;
 }
 
+/* Get Elephant Flows */
+static vector<pair<string, string>> get_elephants(unordered_map<int, unordered_map<int, vector<int64_t>>> flows, int interval_time)
+{
+  int64_t sum_network_data = 0;
+  vector<pair<string, string>> elephants;
+  for (auto it = flows.begin(); it != flows.end(); it++)
+  {
+    for (auto it_2 = it->second.begin(); it_2 != it->second.end(); it_2++)
+    {
+      string src = "H_" + to_string(it->first);
+      string dest = "H_" + to_string(it_2->first);
+      string dest_sw = term_sw_map[dest];
+      string src_sw = term_sw_map[src];
+      if (dest_sw != src_sw)
+      {
+        int64_t sum = 0;
+        for (int i = 0; i < it_2->second.size(); i++)
+        {
+          // cout << "The value is : " << i << "and size:" << it_2->second.size() << "and :" << limit << endl;
+          sum += it_2->second[i];
+        }
+        sum_network_data += sum;
+
+        int64_t val = 0;
+        val = 0.1 * interval_time;
+
+        if (sum > val)
+        {
+          elephants.push_back(make_pair(src, dest));
+        }
+      }
+    }
+  }
+  // cout << "Network data : " << sum_network_data << endl;
+  return elephants;
+}
+
+void switch_data_process(router_state *ns, tw_bf *b, terminal_custom_message *m, tw_lp *lp)
+{
+  if (count_switch_update < (ns->params->num_groups * ns->params->num_num_routers) - 1)
+  {
+    count_switch_update += 1;
+  }
+  else
+  {
+	count_switch_update = 0;
+	elephant_flows = get_elephants(flow_table, data_proc_interval);
+	if (tw_now(lp) <= 40000000)
+  	{
+    		tw_event *e_data;
+    		void *m_data;
+    		tw_stime eventcall_time;
+    		tw_stime interval = data_proc_interval;
+    		eventcall_time = interval;
+    		e_data = tw_event_new(lp->gid, eventcall_time, lp);
+    		m_data = tw_event_data(e_data);
+    		m_data->type = R_PROCESS;
+    		m_data->magic = router_magic_num;
+    		tw_event_send(e_data);
+  	}
+  }
+}
+
+
 void router_custom_event(router_state * s, tw_bf * bf, terminal_custom_message * msg, 
     tw_lp * lp) {
   s->fwd_events++;
@@ -3643,6 +3725,10 @@ void router_custom_event(router_state * s, tw_bf * bf, terminal_custom_message *
     case R_BUFFER:
       router_buf_update(s, bf, msg, lp);
       break;
+
+    case R_PROCESS:
+    	switch_data_process(s, bf, msg, lp);
+    	break;
 
     default:
       printf("\n (%lf) [Router %d] Router Message type not supported %d dest " 
