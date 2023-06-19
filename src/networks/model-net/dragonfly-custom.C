@@ -40,6 +40,8 @@
 #define MAX_STATS 65536
 #define SHOW_ADAP_STATS 1
 
+#define DFDEBUG 1
+
 #define LP_CONFIG_NM_TERM (model_net_lp_config_names[DRAGONFLY_CUSTOM])
 #define LP_METHOD_NM_TERM (model_net_method_names[DRAGONFLY_CUSTOM])
 #define LP_CONFIG_NM_ROUT (model_net_lp_config_names[DRAGONFLY_CUSTOM_ROUTER])
@@ -1291,12 +1293,13 @@ void router_custom_setup(router_state *r, tw_lp *lp)
     tw_stime eventcall_time;
     tw_stime interval = data_proc_interval;
     eventcall_time = interval;
-    // printf("Current time %lf and interval %f and event callTime %f\n", tw_now(lp), interval, eventcall_time);
-    e_data = tw_event_new(lp->gid, eventcall_time, lp);
+    e_data = model_net_method_event_new(lp->gid, eventcall_time, lp,
+                                        DRAGONFLY_CUSTOM_ROUTER, (void **)&m_data, NULL);
     m_data->type = R_PROCESS;
     m_data->magic = router_magic_num;
     tw_event_send(e_data);
   }
+
   return;
 }
 
@@ -3907,6 +3910,7 @@ static void router_buf_update(router_state *s, tw_bf *bf, terminal_custom_messag
 }
 
 /* Get Elephant Flows */
+
 static vector<pair<string, string>> get_elephants(unordered_map<string, unordered_map<string, vector<int64_t>>> flows, int interval_time)
 {
   int64_t sum_network_data = 0;
@@ -3954,20 +3958,27 @@ void switch_data_process(router_state *ns, tw_bf *b, terminal_custom_message *m,
   }
   else
   {
+#ifdef DFDEBUG
+    cout << "All Switches have been updated current sim time " << tw_now(lp)
+         << " count_switch_update variable " << count_switch_update
+         << " polling phase " << polling_phase << endl;
+#endif
     count_switch_update = 0;
     vector<pair<string, string>> elephant_flows;
     elephant_flows = get_elephants(flow_table, data_proc_interval);
     write_elephant_flows(elephant_flows, polling_phase);
+    update_flow_table;
     polling_phase += 1;
   }
-  if (tw_now(lp) <= 40000000)
+  if (tw_now(lp) <= 10000000)
   {
     tw_event *e_data;
     terminal_custom_message *m_data;
     tw_stime eventcall_time;
     tw_stime interval = data_proc_interval;
     eventcall_time = interval;
-    e_data = tw_event_new(lp->gid, eventcall_time, lp);
+    e_data = model_net_method_event_new(lp->gid, eventcall_time, lp,
+                                        DRAGONFLY_CUSTOM_ROUTER, (void **)&m_data, NULL);
     m_data->type = R_PROCESS;
     m_data->magic = router_magic_num;
     tw_event_send(e_data);
@@ -3997,6 +4008,9 @@ void router_custom_event(router_state *s, tw_bf *bf, terminal_custom_message *ms
     break;
 
   case R_PROCESS:
+#ifdef DFDEBUG
+    cout << "Router process called by " << s->router_id << " at time " << tw_now(lp) << endl;
+#endif
     switch_data_process(s, bf, msg, lp);
     break;
 
